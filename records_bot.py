@@ -134,7 +134,7 @@ def get_normal_temps(x):
 
 def main():
     mastodon = Mastodon(
-    access_token = 'SZy1JpAfq5m8ECm5lOcirB4ua-sJH3S3arE_ZC7XrHc',
+    access_token = '################################',
     api_base_url = 'https://botsin.space/')
 
     d = datetime.now()
