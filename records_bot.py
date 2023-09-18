@@ -2,17 +2,15 @@ from mastodon import Mastodon
 import requests, json
 from datetime import datetime
 
-#East Bay - Berkeley: 040693
-#South Bay - Los Gatos: 045123
-#North Bay - Santa Rosa: 047965
-
-DEBUG = False
-
-#For adding a Leading Zero to a single-digit integer
-LZ = lambda x : str(x) if x >= 10 else '0'+str(x)
+DEBUG = False # Set this to False to print the results without posting to Mastodon
+MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+DOWNTOWN_SF_WEATHER_STATION_ID = "047772"
 
 # For missing values, we can't leave them as a string (namely "M") so convert them to a dummy numerical value
 MISSING_VALUE = 777
+
+#For adding a Leading Zero to a single-digit integer
+LZ = lambda x : str(x) if x >= 10 else '0'+str(x)
 
 def ordinalize(x):
     if x >= 10 and x <= 14:
@@ -28,21 +26,20 @@ def ordinalize(x):
         ordinal = 'th'
     return str(x)+ordinal
 
-def convert_date_string(s):
+def convert_date_string(s): # Convert a YYYY-MM-DD string to a datetime object
     x = [int(y) for y in s.split("-")]
     return datetime(x[0], x[1], x[2])
 
-#REMOVE_MISSING = lambda y: [x for x in y if 'M' not in x]
-
 def record_year(y):
-    if isinstance(y, int):
+    if isinstance(y, int): # If y is a String (a single year)
         return str(y)
-    else:
+    
+    else: # If y is a List (a daily record has occured in multiple years)
         sortarr = reversed(sorted([x for x in y]))
         sortarr = [str(x) for x in sortarr]
         return ', '.join(sortarr)
 
-def get_records(d, station_id="047772"): #"d" is a datetime object
+def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): #"d" is a datetime object
     request_params = {"sid":station_id,
                       "sdate":f"1875-{LZ(d.month)}-"+LZ(d.day),
                       "edate":f"2022-{LZ(d.month)}-"+LZ(d.day),
@@ -57,9 +54,9 @@ def get_records(d, station_id="047772"): #"d" is a datetime object
     for d in raw_data:
         high_temp = int(d[1]) if d[1] != "M" else MISSING_VALUE
         low_temp = int(d[2]) if d[2] != "M" else MISSING_VALUE
-        #Convert T (for Trace amounts of rain) to a numerical value
+
         pcpn = d[3]
-        if pcpn == "T":
+        if pcpn == "T": # Convert T (for Trace amounts of rain) to a numerical value
             pcpn = 0.001
         elif pcpn == "M" or pcpn == "S": # Record for Febuary 6th 1982 has precipitation value "S" (??)
             pcpn = MISSING_VALUE
@@ -68,12 +65,11 @@ def get_records(d, station_id="047772"): #"d" is a datetime object
         data.append([convert_date_string(d[0]), high_temp, low_temp, pcpn])
     
     data.sort(key = lambda x: x[1])
-    #lowest_maxt = data[0]
+
     lowest_maxt = [x for x in data[0] if x != MISSING_VALUE]
     lowest_maxt_value = lowest_maxt[1]
     lowest_maxt_year = [x[0].year for x in data if x[1] == lowest_maxt_value]
 
-    #highest_maxt = data[-1]
     highest_maxt = [x for x in data[-1] if x != MISSING_VALUE]
     highest_maxt_value = highest_maxt[1]
     highest_maxt_year = [x[0].year for x in reversed(data) if x[1] == highest_maxt_value]
@@ -92,12 +88,10 @@ def get_records(d, station_id="047772"): #"d" is a datetime object
     
     data.sort(key = lambda x: x[2])
     
-    #lowest_mint = data[0]
     lowest_mint = [x for x in data[0] if x != MISSING_VALUE]
     lowest_mint_value = lowest_mint[2]
     lowest_mint_year = [x[0].year for x in data if int(x[2]) == lowest_mint_value]
 
-    #highest_mint = data[-1]
     highest_mint = [x for x in data[-1] if x != MISSING_VALUE]
     highest_mint_value = highest_mint[2]
     highest_mint_year = [x[0].year for x in reversed(data) if int(x[2]) == highest_mint_value]
@@ -125,7 +119,7 @@ def get_records(d, station_id="047772"): #"d" is a datetime object
 
 def get_normal_temps(x):
     today = f'{x.year}-{LZ(x.month)}-{LZ(x.day)}'
-    params = {"sid":"047772","date":today,"elems":[{"name":"maxt","normal":"1"},{"name":"mint","normal":"1"}]}
+    params = {"sid":DOWNTOWN_SF_WEATHER_STATION_ID,"date":today,"elems":[{"name":"maxt","normal":"1"},{"name":"mint","normal":"1"}]}
     r = requests.post("http://data.rcc-acis.org/StnData", json=params, headers={'Accept':'application/json'})
     data = json.loads(r.text)
     avg_high = data['data'][0][1]
@@ -134,22 +128,20 @@ def get_normal_temps(x):
 
 def main():
     mastodon = Mastodon(
-    access_token = '################################',
+    access_token = MASTODON_API_TOKEN,
     api_base_url = 'https://botsin.space/')
 
     d = datetime.now()
-    #d = datetime(2023, 9, 16)
     records = get_records(d)
     max_temps = records['max_temps']
     min_temps = records['min_temps']
 
-    # TMP_MSG = "[This is a test toot, please disregard!]\n\n"
-
     toot = f"Daily Records for {d.strftime('%B '+ordinalize(d.day))}:\n\nHighs\n"
+
     norms = get_normal_temps(datetime.now())
-    #norms = get_normal_temps(datetime(2023, 9, 14, 16, 35, 35))
     avg_high = f" / Normal: {norms[0]}\n\n"
     avg_low = f" / Normal: {norms[1]}\n\n"
+
     toot += f"{max_temps['highest']['temp']} ({record_year(max_temps['highest']['year'])}) / {max_temps['lowest']['temp']} ({record_year(max_temps['lowest']['year'])})"+avg_high
     toot += f"Lows\n{min_temps['highest']['temp']} ({record_year(min_temps['highest']['year'])}) / "
     toot += f"{min_temps['lowest']['temp']} ({record_year(min_temps['lowest']['year'])})"+avg_low
