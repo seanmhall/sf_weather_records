@@ -2,8 +2,8 @@ from mastodon import Mastodon
 import requests, json
 from datetime import datetime
 
-DEBUG = False # Set this to False to print the results without posting to Mastodon
-MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+DEBUG = False # Set this to True to print the results without posting to Mastodon
+MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXX"
 DOWNTOWN_SF_WEATHER_STATION_ID = "047772"
 
 # For missing values, we can't leave them as a string (namely "M") so convert them to a dummy numerical value
@@ -33,13 +33,12 @@ def convert_date_string(s): # Convert a YYYY-MM-DD string to a datetime object
 def record_year(y):
     if isinstance(y, int): # If y is a String (a single year)
         return str(y)
-    
     else: # If y is a List (a daily record has occured in multiple years)
-        sortarr = reversed(sorted([x for x in y]))
+        sortarr = reversed(sorted([x for x in y])) # Most recent years first
         sortarr = [str(x) for x in sortarr]
         return ', '.join(sortarr)
 
-def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): #"d" is a datetime object
+def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): # "d" is a datetime object
     request_params = {"sid":station_id,
                       "sdate":f"1875-{LZ(d.month)}-"+LZ(d.day),
                       "edate":f"2022-{LZ(d.month)}-"+LZ(d.day),
@@ -76,11 +75,11 @@ def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): #"d" is a datetim
 
     output = {"max_temps": {
                     "lowest": {
-                        "year": lowest_maxt_year if len(lowest_maxt_year) > 0 else lowest_maxt_year[0],
+                        "year": lowest_maxt_year if len(lowest_maxt_year) > 1 else lowest_maxt_year[0],
                         "temp": lowest_maxt_value
                         },
                     "highest": {
-                        "year": highest_maxt_year if len(highest_maxt_year) > 0 else highest_maxt_year[0],
+                        "year": highest_maxt_year if len(highest_maxt_year) > 1 else highest_maxt_year[0],
                         "temp": highest_maxt_value
                         },
                     }
@@ -138,7 +137,7 @@ def main():
 
     toot = f"Daily Records for {d.strftime('%B '+ordinalize(d.day))}:\n\nHighs\n"
 
-    norms = get_normal_temps(datetime.now())
+    norms = get_normal_temps(d)
     avg_high = f" / Normal: {norms[0]}\n\n"
     avg_low = f" / Normal: {norms[1]}\n\n"
 
@@ -146,6 +145,7 @@ def main():
     toot += f"Lows\n{min_temps['highest']['temp']} ({record_year(min_temps['highest']['year'])}) / "
     toot += f"{min_temps['lowest']['temp']} ({record_year(min_temps['lowest']['year'])})"+avg_low
     toot += f"Most Precipitation\n{records['precipitation']['amount']} inches ({record_year(records['precipitation']['year'])})"
+    
     if DEBUG:
         print(toot)
     else:
