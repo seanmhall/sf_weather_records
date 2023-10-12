@@ -3,8 +3,9 @@ import requests, json
 from datetime import datetime
 
 DEBUG = False # Set this to True to print the results without posting to Mastodon
-MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 DOWNTOWN_SF_WEATHER_STATION_ID = "047772" #This value has to be a string since it has a leading zero
+ACIS_URL = "http://data.rcc-acis.org/StnData"
 
 # For missing values, we can't leave them as a string (namely "M") so convert them to a dummy numerical value
 # Must be a number that won't occur naturally in any temperature records
@@ -27,24 +28,26 @@ def ordinalize(x):
         ordinal = 'th'
     return str(x)+ordinal
 
-def record_year(y):
-    if isinstance(y, int): # If y is a String (a single year)
+#Returns a string, e.g. "1887" or "1901, 1925, 1982"
+def display_record_years(y):
+    if isinstance(y, int): # If y is an Integer (a single year)
         return str(y)
-    else: # If y is a List (a daily record has occured in multiple years)
-        sortarr = reversed(sorted([x for x in y])) # Most recent years first
+    
+    else: # If y is a List (i.e. a daily record has occured in multiple years)
+        sortarr = reversed(sorted(y)) # Most recent years first
         sortarr = [str(x) for x in sortarr]
         return ', '.join(sortarr)
 
-def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): # "d" is a datetime object
+def get_records(station_id, month, day, starting_year, ending_year): # "d" is a datetime object
     request_params = {"sid":station_id,
-                      "sdate":f"1875-{LZ(d.month)}-"+LZ(d.day),
-                      "edate":f"2022-{LZ(d.month)}-"+LZ(d.day),
+                      "sdate":f"{starting_year}-{LZ(month)}-"+LZ(day),
+                      "edate":f"{ending_year}-{LZ(month)}-"+LZ(day),
                       "elems":[{"name":"maxt","interval":[1,0,0],"duration":"dly"},
                                {"name":"mint","interval":[1,0,0],"duration":"dly"},
                                {"name":"pcpn","interval":[1,0,0],"duration":"dly"}]
                       }
     
-    r = requests.post("http://data.rcc-acis.org/StnData", json=request_params, headers={'Accept':'application/json'})
+    r = requests.post(ACIS_URL, json=request_params, headers={'Accept':'application/json'})
     raw_data = json.loads(r.text)["data"]
     data = []
     
@@ -120,13 +123,15 @@ def get_records(d, station_id=DOWNTOWN_SF_WEATHER_STATION_ID): # "d" is a dateti
                                 "amount": rainiest_day[3]}
     return output
 
-def get_normal_temps(x):
+#Returns a List with two elements, the average High and average Low temperatures for the given date
+def get_normal_temps(x, sid):
     today = f'{x.year}-{LZ(x.month)}-{LZ(x.day)}'
-    params = {"sid":DOWNTOWN_SF_WEATHER_STATION_ID,"date":today,"elems":[{"name":"maxt","normal":"1"},{"name":"mint","normal":"1"}]}
-    r = requests.post("http://data.rcc-acis.org/StnData", json=params, headers={'Accept':'application/json'})
+    params = {"sid":sid,"date":today,"elems":[{"name":"maxt","normal":"1"},{"name":"mint","normal":"1"}]}
+    r = requests.post(ACIS_URL, json=params, headers={'Accept':'application/json'})
     data = json.loads(r.text)
     avg_high = data['data'][0][1]
     avg_low = data['data'][0][2]
+    
     return [avg_high, avg_low]
 
 def main():
@@ -135,20 +140,20 @@ def main():
     api_base_url = 'https://botsin.space/')
 
     d = datetime.now()
-    records = get_records(d)
+    records = get_records(DOWNTOWN_SF_WEATHER_STATION_ID, d.month, d.day, 1875, d.year-1) #Assumes weather records will have been updated within one (1) year
     max_temps = records['max_temps']
     min_temps = records['min_temps']
 
     toot = f"Daily Records for {d.strftime('%B '+ordinalize(d.day))}:\n\nHighs\n"
 
-    norms = get_normal_temps(d)
+    norms = get_normal_temps(d, DOWNTOWN_SF_WEATHER_STATION_ID)
     avg_high = f" / Normal: {norms[0]}\n\n"
     avg_low = f" / Normal: {norms[1]}\n\n"
 
-    toot += f"{max_temps['highest']['temp']} ({record_year(max_temps['highest']['year'])}) / {max_temps['lowest']['temp']} ({record_year(max_temps['lowest']['year'])})"+avg_high
-    toot += f"Lows\n{min_temps['highest']['temp']} ({record_year(min_temps['highest']['year'])}) / "
-    toot += f"{min_temps['lowest']['temp']} ({record_year(min_temps['lowest']['year'])})"+avg_low
-    toot += f"Most Precipitation\n{records['precipitation']['amount']} inches ({record_year(records['precipitation']['year'])})"
+    toot += f"{max_temps['highest']['temp']} ({display_record_years(max_temps['highest']['year'])}) / {max_temps['lowest']['temp']} ({display_record_years(max_temps['lowest']['year'])})"+avg_high
+    toot += f"Lows\n{min_temps['highest']['temp']} ({display_record_years(min_temps['highest']['year'])}) / "
+    toot += f"{min_temps['lowest']['temp']} ({display_record_years(min_temps['lowest']['year'])})"+avg_low
+    toot += f"Most Precipitation\n{records['precipitation']['amount']} inches ({display_record_years(records['precipitation']['year'])})"
     
     if DEBUG:
         print(toot)
