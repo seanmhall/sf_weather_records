@@ -4,7 +4,7 @@ from datetime import datetime
 
 DEBUG = False # Set this to True to print the results without posting to Mastodon
 MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-DOWNTOWN_SF_WEATHER_STATION_ID = "047772" #This value has to be a string since it has a leading zero
+DOWNTOWN_SF_WEATHER_STATION_ID = "047772" # This value has to be a string since it has a leading zero
 ACIS_URL = "http://data.rcc-acis.org/StnData"
 
 # For missing values, we can't leave them as a string (namely "M") so convert them to a dummy numerical value
@@ -39,6 +39,9 @@ def display_record_years(y):
         return ', '.join(sortarr)
 
 def get_records(station_id, month, day, starting_year, ending_year): # "d" is a datetime object
+    IS_LEAP_DAY  = (month == 2 and day == 29)
+    starting_year = 1876 if IS_LEAP_DAY else starting_year
+    ending_year = 2020 if IS_LEAP_DAY else ending_year
     request_params = {"sid":station_id,
                       "sdate":f"{starting_year}-{LZ(month)}-"+LZ(day),
                       "edate":f"{ending_year}-{LZ(month)}-"+LZ(day),
@@ -50,13 +53,24 @@ def get_records(station_id, month, day, starting_year, ending_year): # "d" is a 
     r = requests.post(ACIS_URL, json=request_params, headers={'Accept':'application/json'})
     raw_data = json.loads(r.text)["data"]
     data = []
-    
+
     for d in raw_data:
 
         year = int(d[0][:4]) #The first four digits of the YYYY-MM-DD string
+        current_day = int(d[0][-2:])
+
+        # ACIS will return a mixture of values for both February 28th AND 29th if we ask for just the Feb 29th values
+        # Therefore if we see a February 28th value and today is Leap Day, skip it
+        if IS_LEAP_DAY and current_day == 28:
+            continue
+        
         high_temp = int(d[1]) if d[1] != "M" else MISSING_VALUE
         low_temp = int(d[2]) if d[2] != "M" else MISSING_VALUE
         pcpn = d[3]
+        # Code below for edge case of November 10 1975 in SF (047772) records
+        # Precipitation value for that day was recorded as "0.12A"
+        # I assume the "A" is a typo
+        pcpn = pcpn.replace("A", "")
 
         if pcpn == "T": # Convert T (for Trace amounts of rain) to a numerical value
             pcpn = 0.001
@@ -135,26 +149,30 @@ def get_normal_temps(x, sid):
     return [avg_high, avg_low]
 
 def main():
-    mastodon = Mastodon(
-    access_token = MASTODON_API_TOKEN,
-    api_base_url = 'https://botsin.space/')
+    mastodon = Mastodon(access_token = MASTODON_API_TOKEN, api_base_url = 'https://botsin.space/')
 
     d = datetime.now()
     records = get_records(DOWNTOWN_SF_WEATHER_STATION_ID, d.month, d.day, 1875, d.year-1) #Assumes weather records will have been updated within one (1) year
     max_temps = records['max_temps']
     min_temps = records['min_temps']
+    monthly_record_highs = [79,81,87,94,97,103,99,98,106,102,86,76]
+    monthly_record_lows = [29,31,33,40,42,46,47,46,47,43,38,27,27]
 
-    toot = f"Daily Records for {d.strftime('%B '+ordinalize(d.day))}:\n\nHighs\n"
+    toot = f"Daily Records for {d.strftime('%B '+ordinalize(d.day))}:\n\n"
 
     norms = get_normal_temps(d, DOWNTOWN_SF_WEATHER_STATION_ID)
     avg_high = f" / Normal: {norms[0]}\n\n"
     avg_low = f" / Normal: {norms[1]}\n\n"
-
-    toot += f"{max_temps['highest']['temp']} ({display_record_years(max_temps['highest']['year'])}) / {max_temps['lowest']['temp']} ({display_record_years(max_temps['lowest']['year'])})"+avg_high
+    is_monthly_record_high = (monthly_record_highs[d.month-1] == max_temps['highest']['temp'])
+    is_monthly_record_low = (monthly_record_lows[d.month-1] == min_temps['lowest']['temp'])
+    asterisk_h = "*" if is_monthly_record_high else ""
+    asterisk_l = "*" if is_monthly_record_low else ""
+    toot += f"Highs\n{max_temps['highest']['temp']}{asterisk_h} ({display_record_years(max_temps['highest']['year'])}) / {max_temps['lowest']['temp']} ({display_record_years(max_temps['lowest']['year'])})"+avg_high
     toot += f"Lows\n{min_temps['highest']['temp']} ({display_record_years(min_temps['highest']['year'])}) / "
-    toot += f"{min_temps['lowest']['temp']} ({display_record_years(min_temps['lowest']['year'])})"+avg_low
+    toot += f"{min_temps['lowest']['temp']}{asterisk_l} ({display_record_years(min_temps['lowest']['year'])})"+avg_low
     toot += f"Most Precipitation\n{records['precipitation']['amount']} inches ({display_record_years(records['precipitation']['year'])})"
-    
+    if (is_monthly_record_low or is_monthly_record_high):
+        toot += "\n\n*Monthly record"
     if DEBUG:
         print(toot)
     else:
