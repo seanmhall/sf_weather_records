@@ -3,6 +3,7 @@ import requests, json
 from datetime import datetime
 
 DEBUG = False # Set this to True to print the results without posting to Mastodon
+MASTODON_HOST_INSTANCE = "https://botsin.space/" # This was the host instance I was using but as of December 2024 it has gone into read-only mode
 MASTODON_API_TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 DOWNTOWN_SF_WEATHER_STATION_ID = "047772" # This value has to be a string since it has a leading zero
 ACIS_URL = "http://data.rcc-acis.org/StnData"
@@ -149,7 +150,7 @@ def get_normal_temps(x, sid):
     return [avg_high, avg_low]
 
 def main():
-    mastodon = Mastodon(access_token = MASTODON_API_TOKEN, api_base_url = 'https://botsin.space/')
+    mastodon = Mastodon(access_token = MASTODON_API_TOKEN, api_base_url = MASTODON_HOST_INSTANCE)
 
     d = datetime.now()
     records = get_records(DOWNTOWN_SF_WEATHER_STATION_ID, d.month, d.day, 1875, d.year-1) #Assumes weather records will have been updated within one (1) year
