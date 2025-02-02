@@ -3,4 +3,4 @@ A simple Python script that posts daily San Francisco Weather Records to Mastodo
 
 ## Update January 2025
 
-This script is now deprecated as (botsin.space is shutting down and has gone into read-only mode)[https://botwiki.org/blog/botsin-space-server-closing-down/].
+This script is now deprecated as [botsin.space is shutting down and has gone into read-only mode](https://botwiki.org/blog/botsin-space-server-closing-down/).
